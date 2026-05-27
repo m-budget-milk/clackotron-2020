@@ -449,6 +449,44 @@ int CTPreferences::getBoardModulePositionCount(uint8_t addr) {
     return 0;
 }
 
+int CTPreferences::getRandomNonEmptyBoardPosition(uint8_t addr) {
+    if (this->boardModulesDoc == nullptr) return -1;
+
+    JsonArray modules = (*this->boardModulesDoc)["modules"].as<JsonArray>();
+    for (JsonObject mod : modules) {
+        if (mod["address"].as<uint8_t>() != addr) continue;
+
+        JsonArray positions = mod["positions"].as<JsonArray>();
+        if (positions.isNull() || positions.size() == 0) return -1;
+
+        int nonEmptyCount = 0;
+        for (JsonObject posObj : positions) {
+            String label = posObj["label"].as<String>();
+            label.trim();
+            if (label.length() > 0) {
+                nonEmptyCount++;
+            }
+        }
+
+        if (nonEmptyCount == 0) return -1;
+
+        int pick = random(nonEmptyCount);
+        int seen = 0;
+        for (int i = 0; i < (int)positions.size(); i++) {
+            String label = positions[i]["label"].as<String>();
+            label.trim();
+            if (label.length() == 0) continue;
+
+            if (seen == pick) return i;
+            seen++;
+        }
+
+        return -1;
+    }
+
+    return -1;
+}
+
 int CTPreferences::findBoardPositionByLabel(uint8_t addr, const String& value) {
     if (this->boardModulesDoc == nullptr) return -1;
     JsonArray modules = (*this->boardModulesDoc)["modules"].as<JsonArray>();

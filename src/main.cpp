@@ -92,10 +92,14 @@ void randomizeBoardPositions() {
 
     for (int i = 0; i < boardCount; i++) {
         uint8_t addr = preferences.getBoardModuleAddress(i);
-        int positionCount = preferences.getBoardModulePositionCount(addr);
-        if (positionCount <= 0) continue;
+        int randomPos = preferences.getRandomNonEmptyBoardPosition(addr);
+        if (randomPos < 0) {
+            boardPositions[i] = (uint8_t)preferences.getBoardDefaultPosition(addr);
+            lastModuleOutputs[i] = 0xFF;
+            continue;
+        }
 
-        boardPositions[i] = (uint8_t)random(positionCount);
+        boardPositions[i] = (uint8_t)randomPos;
         lastModuleOutputs[i] = 0xFF;
         randomized++;
     }
@@ -309,6 +313,22 @@ void loop() {
                     mirrorStationId, mirrorStationQuery, mirrorPlatform
                 );
 
+                int boardCount = preferences.getBoardModuleCount();
+                auto resetMappedAddrToDefault = [&](uint8_t addr) {
+                    for (int i = 0; i < boardCount; i++) {
+                        if (preferences.getBoardModuleAddress(i) != addr) continue;
+                        boardPositions[i] = (uint8_t)preferences.getBoardDefaultPosition(addr);
+                        lastModuleOutputs[i] = 0xFF;
+                        break;
+                    }
+                };
+
+                auto resetAllMappedToDefault = [&]() {
+                    for (int m = 0; m < mirrorMappingCount; m++) {
+                        resetMappedAddrToDefault(mirrorMappings[m].addr);
+                    }
+                };
+
                 if (entry.valid) {
                     // Check if departure is within the configured window
                     bool withinWindow = true;
@@ -323,25 +343,17 @@ void loop() {
 
                     if (!withinWindow) {
                         // No departure within window — reset all mapped modules to default position
-                        int boardCount = preferences.getBoardModuleCount();
-                        for (int m = 0; m < mirrorMappingCount; m++) {
-                            uint8_t addr = mirrorMappings[m].addr;
-                            for (int i = 0; i < boardCount; i++) {
-                                if (preferences.getBoardModuleAddress(i) != addr) continue;
-                                boardPositions[i] = (uint8_t)preferences.getBoardDefaultPosition(addr);
-                                lastModuleOutputs[i] = 0xFF;
-                                break;
-                            }
-                        }
+                        resetAllMappedToDefault();
                         CTLog::info("mirror: departure outside window, reset to default positions");
                     } else {
 
-                    int boardCount = preferences.getBoardModuleCount();
                     for (int m = 0; m < mirrorMappingCount; m++) {
                         uint8_t addr = mirrorMappings[m].addr;
                         String fieldKey = String(mirrorMappings[m].field);
 
                         if (fieldKey == MIRROR_FIELD_NONE) continue;
+
+                        int matchedPassListPos = -1;
 
                         // Resolve field value from entry
                         String value;
@@ -369,15 +381,30 @@ void loop() {
                         else if (fieldKey == MIRROR_FIELD_NUMBER)           value = entry.number;
                         else if (fieldKey == MIRROR_FIELD_DELAY)            value = entry.delay;
                         else if (fieldKey == MIRROR_FIELD_PLATFORM)         value = entry.platform;
+                        else if (fieldKey == MIRROR_FIELD_NEXT_STATIONS) {
+                            for (int passIdx = 0; passIdx < entry.passListCount; passIdx++) {
+                                int posIdx = preferences.findBoardPositionByLabel(addr, entry.passList[passIdx]);
+                                if (posIdx >= 0) {
+                                    value = entry.passList[passIdx];
+                                    matchedPassListPos = posIdx;
+                                    break;
+                                }
+                            }
+                        }
 
                         // Find position index in the module's positions array
-                        if (value.isEmpty()) continue;
+                        if (value.isEmpty()) {
+                            resetMappedAddrToDefault(addr);
+                            continue;
+                        }
 
                         // Locate module index in boardPositions array
                         for (int i = 0; i < boardCount; i++) {
                             if (preferences.getBoardModuleAddress(i) != addr) continue;
 
-                            int posIdx = preferences.findBoardPositionByLabel(addr, value);
+                            int posIdx = matchedPassListPos >= 0
+                                ? matchedPassListPos
+                                : preferences.findBoardPositionByLabel(addr, value);
                             CTLog::debug(
                                 "mirror: addr=" + String(addr) +
                                 " field=" + fieldKey +
@@ -388,14 +415,17 @@ void loop() {
                                 boardPositions[i] = (uint8_t)posIdx;
                                 lastModuleOutputs[i] = 0xFF; // force write
                             } else {
-                                // No match found, reset to position 0
-                                boardPositions[i] = 0;
-                                lastModuleOutputs[i] = 0xFF; // force write
+                                // No match found, reset to module default position
+                                resetMappedAddrToDefault(addr);
                             }
                             break;
                         }
                     }
                     } // end withinWindow
+                } else {
+                    // No valid departure found for this fetch; reset mapped modules.
+                    resetAllMappedToDefault();
+                    CTLog::info("mirror: no valid departure, reset to default positions");
                 }
             }
         }

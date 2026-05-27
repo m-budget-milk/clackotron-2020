@@ -13,6 +13,9 @@
 #define MIRROR_FIELD_NUMBER           "number"
 #define MIRROR_FIELD_DELAY            "delay"
 #define MIRROR_FIELD_PLATFORM         "platform"
+#define MIRROR_FIELD_NEXT_STATIONS    "next_stations"
+
+#define STATIONBOARD_MAX_PASSLIST_ENTRIES 12
 
 /// @brief Normalized stationboard departure entry
 struct StationboardEntry {
@@ -23,6 +26,8 @@ struct StationboardEntry {
     String number;           // e.g. "310"
     String delay;            // e.g. "+5" or "0"
     String platform;         // e.g. "4"
+    String passList[STATIONBOARD_MAX_PASSLIST_ENTRIES];
+    int passListCount;       // number of populated passList station names
     bool valid;              // false when no matching departure was found
     String operatorCode;     // e.g. "PAG" for Postauto buses
 };

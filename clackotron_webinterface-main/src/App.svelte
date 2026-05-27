@@ -28,6 +28,8 @@
   let addrResult = null;
   let saveStatus = null;
   let selectedPositions = {};
+  let boardMode = "manual";
+  let randomIntervalSeconds = 60;
 
   let mirrorStationSearch = "";
   let mirrorSearchResults = [];
@@ -93,7 +95,10 @@
   const saveBoard = async () => {
     saveStatus = null;
     try {
-      const result = await saveBoardPositions(selectedPositions);
+      const result = await saveBoardPositions(selectedPositions, {
+        mode: boardMode,
+        randomIntervalSeconds,
+      });
       saveStatus = result.success ? "ok" : "error";
     } catch (e) {
       saveStatus = "error";
@@ -235,6 +240,7 @@
     { value: "number", label: "Train Number" },
     { value: "delay", label: "Delay" },
     { value: "platform", label: "Platform" },
+    { value: "next_stations", label: "Next Stations" },
   ];
 
   const searchStations = async () => {
@@ -287,6 +293,7 @@
     if (l.includes("train") && l.includes("number")) return "number";
     if (l.includes("delay")) return "delay";
     if (l.includes("platform") || l.includes("track")) return "platform";
+    if (l.includes("next station") || l.includes("next stations") || l.includes("calling at") || l.includes("via")) return "next_stations";
     return "none";
   };
 
@@ -303,7 +310,12 @@
 
   onMount(async () => {
     await loadWebinterfaceConfig();
-    await loadBoardData();
+    const boardConfig = await loadBoardData();
+    boardMode = String(boardConfig?.mode || "manual").toLowerCase() === "random" ? "random" : "manual";
+    randomIntervalSeconds = Number(boardConfig?.randomIntervalSeconds || 60);
+    if (!Number.isFinite(randomIntervalSeconds) || randomIntervalSeconds < 1) randomIntervalSeconds = 1;
+    if (randomIntervalSeconds > 86400) randomIntervalSeconds = 86400;
+
     const mirror = await loadMirrorConfig();
 
     const hasMappings = mirror?.mappings && Object.keys(mirror.mappings).length > 0;
@@ -397,6 +409,22 @@
             </table>
           </div>
         {/each}
+
+        <h3 class="track-heading">Display Mode</h3>
+        <div class="mirror-row">
+          <div class="mirror-label">Mode</div>
+          <select bind:value={boardMode}>
+            <option value="manual">Manual</option>
+            <option value="random">Random</option>
+          </select>
+        </div>
+
+        {#if boardMode === "random"}
+          <div class="mirror-row">
+            <div class="mirror-label">Cycle interval (seconds)</div>
+            <input type="number" min="1" max="86400" bind:value={randomIntervalSeconds} />
+          </div>
+        {/if}
 
         <div class="save-line">
           <button on:click={saveBoard}>Save</button>
@@ -805,6 +833,14 @@
     border: 1px solid #bcbcbc;
     border-radius: 5px;
     min-width: 220px;
+  }
+
+  .mirror-row select {
+    padding: 8px 10px;
+    border: 1px solid #bcbcbc;
+    border-radius: 5px;
+    min-width: 220px;
+    background: #fff;
   }
 
   .mirror-search-wrap {

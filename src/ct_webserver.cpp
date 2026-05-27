@@ -381,9 +381,10 @@ void CTWebserver::createMirrorConfigSetRoute() {
                 MIRROR_FIELD_NONE, MIRROR_FIELD_DESTINATION,
                 MIRROR_FIELD_DEPARTURE_HOUR, MIRROR_FIELD_DEPARTURE_MINUTE,
                 MIRROR_FIELD_CATEGORY, MIRROR_FIELD_NUMBER,
-                MIRROR_FIELD_DELAY, MIRROR_FIELD_PLATFORM
+                MIRROR_FIELD_DELAY, MIRROR_FIELD_PLATFORM,
+                MIRROR_FIELD_NEXT_STATIONS
             };
-            const int validCount = 8;
+            const int validCount = 9;
 
             for (JsonPair kv : mappings) {
                 // Validate module address key

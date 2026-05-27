@@ -125,6 +125,11 @@ class CTPreferences {
     /// @return Number of positions for the module or 0 if unknown
     int getBoardModulePositionCount(uint8_t addr);
 
+    /// @brief Pick a random position index whose label is non-empty
+    /// @param addr - RS485 address
+    /// @return Position index, or -1 if no non-empty label exists
+    int getRandomNonEmptyBoardPosition(uint8_t addr);
+
       /// @brief Find the best-matching position index for a value string by
       ///        scanning the module's position labels. Tries exact, then prefix
       ///        matches in both directions (see findPositionByLabel in

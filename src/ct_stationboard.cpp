@@ -120,6 +120,7 @@ StationboardEntry CTStationboard::fetchNextDeparture(
 ) {
     StationboardEntry result;
     result.valid = false;
+    result.passListCount = 0;
 
     String stationParam = stationId.length() > 0 ? stationId : stationQuery;
     if (stationParam.isEmpty()) {
@@ -172,6 +173,9 @@ StationboardEntry CTStationboard::fetchNextDeparture(
     entryFilter["stop"]["platform"] = true;
     entryFilter["stop"]["departure"] = true;
     entryFilter["stop"]["delay"] = true;
+    for (int i = 0; i < STATIONBOARD_MAX_PASSLIST_ENTRIES; i++) {
+        entryFilter["passList"][i]["station"]["name"] = true;
+    }
 
     DynamicJsonDocument doc(16384);
     DeserializationError err = deserializeJson(doc, stream, DeserializationOption::Filter(filter));
@@ -205,6 +209,18 @@ StationboardEntry CTStationboard::fetchNextDeparture(
         result.operatorCode = entry["operator"].as<String>();
         result.number      = entry["number"].as<String>();
         result.platform    = entryPlatform != nullptr ? String(entryPlatform) : "";
+
+        JsonArray passList = entry["passList"].as<JsonArray>();
+        result.passListCount = 0;
+        if (!passList.isNull()) {
+            for (JsonObject passEntry : passList) {
+                if (result.passListCount >= STATIONBOARD_MAX_PASSLIST_ENTRIES) break;
+                String stationName = passEntry["station"]["name"].as<String>();
+                stationName.trim();
+                if (stationName.length() == 0) continue;
+                result.passList[result.passListCount++] = stationName;
+            }
+        }
 
         int delaySeconds = entry["stop"]["delay"].as<int>();
         result.delay = (delaySeconds > 0)
