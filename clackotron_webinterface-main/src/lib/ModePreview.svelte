@@ -22,10 +22,10 @@
   .preview-grid td {
     width: 50px;
     height: 50px;
-    border: 1px solid #2d327d;
+    border: 1px solid #A20013;
     text-align: center;
     text-transform: uppercase;
     font-weight: bold;
-    color: #2d327d;
+    color: #A20013;
   }
 </style>

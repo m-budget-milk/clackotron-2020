@@ -41,7 +41,7 @@
   }
 
   .loader div:nth-of-type(5) {
-    background: #2d327d;
+    background: #A20013;
     animation: loaderSpin 2.5s linear infinite;
     -webkit-animation: loaderSpin 2.5s linear infinite;
   }

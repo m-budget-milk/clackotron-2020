@@ -69,8 +69,8 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    border: 2px solid #2d327d;
-    color: #2d327d;
+    border: 2px solid #A20013;
+    color: #A20013;
     border-radius: 5px;
     transition: all 300ms ease-in-out;
     text-align: center;
@@ -84,7 +84,7 @@
   }
 
   .mode-button:checked + .mode-label {
-    background-color: #2d327d;
+    background-color: #A20013;
     color: #ffffff;
   }
 </style>

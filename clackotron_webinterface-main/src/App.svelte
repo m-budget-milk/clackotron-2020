@@ -617,7 +617,7 @@
     flex: 1;
     border: 0;
     background: transparent;
-    color: #2d327d;
+    color: #A20013;
     padding: 10px 12px;
     cursor: pointer;
     font-weight: 600;
@@ -625,7 +625,7 @@
 
   .page-tabs button.active {
     background: #ffffff;
-    color: #1f245f;
+    color: #A20013;
   }
 
   .save-line {
@@ -642,7 +642,7 @@
     border: 0;
     border-radius: 5px;
     box-shadow: none;
-    background: #2d327d;
+    background: #A20013;
     color: #ffffff;
     cursor: pointer;
   }
@@ -659,7 +659,7 @@
   }
 
   .board-table th {
-    background: #2d327d;
+    background: #A20013;
     color: #fff;
     padding: 8px 10px;
     text-align: left;
@@ -685,9 +685,9 @@
 
   .track-heading {
     margin: 18px 10px 8px 10px;
-    color: #2d327d;
+    color: #A20013;
     font-size: 1.05rem;
-    border-bottom: 2px solid #d7dcf3;
+    border-bottom: 2px solid #e2b8bd;
     padding-bottom: 4px;
   }
 
@@ -716,8 +716,8 @@
     width: 86px;
     flex: 0 0 auto;
     height: 56px;
-    background: #f5f6fb;
-    border: 1px solid #ccd3eb;
+    background: #fff4f5;
+    border: 1px solid #e2b8bd;
     border-radius: 6px;
     text-align: center;
     padding: 4px;
@@ -736,7 +736,7 @@
 
   .visual-label {
     font-weight: 700;
-    color: #2d327d;
+    color: #A20013;
     line-height: 1.1;
     min-height: 16px;
   }
@@ -780,7 +780,7 @@
 
   .debug-option h3 {
     margin: 0 0 6px 0;
-    color: #2d327d;
+    color: #A20013;
     font-size: 1rem;
   }
 
@@ -808,10 +808,10 @@
   .debug-result {
     margin-top: 10px;
     padding: 8px 10px;
-    background: #e7f1ff;
-    border: 1px solid #b8d3f7;
+    background: #fff0f2;
+    border: 1px solid #e2b8bd;
     border-radius: 5px;
-    color: #1f245f;
+    color: #A20013;
     font-weight: 600;
   }
 
@@ -824,7 +824,7 @@
 
   .mirror-label {
     min-width: 180px;
-    color: #2d327d;
+    color: #A20013;
     font-weight: 600;
   }
 
@@ -864,9 +864,9 @@
     text-align: left;
     margin: 2px 0;
     padding: 8px 10px;
-    border: 1px solid #ccd3eb;
-    background: #f5f6fb;
-    color: #1f245f;
+    border: 1px solid #e2b8bd;
+    background: #fff4f5;
+    color: #A20013;
     border-radius: 4px;
     cursor: pointer;
   }

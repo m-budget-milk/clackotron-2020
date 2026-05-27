@@ -1,10 +1,49 @@
 import { writable, derived } from 'svelte/store';
 
-export const boardDefs = writable([]);
-export const boardPositions = writable({});
-export const boardLayout = writable([]);
+/**
+ * @typedef {{ label?: string }} BoardPosition
+ * @typedef {{
+ *   address: number | string,
+ *   track?: string,
+ *   label?: string,
+ *   length?: number | string,
+ *   positions?: BoardPosition[],
+ *   defaultPosition?: number
+ * }} BoardModule
+ * @typedef {BoardModule & {
+ *   track: string,
+ *   length: number,
+ *   selectedPosition: number
+ * }} BoardRow
+ * @typedef {{ track: string, rows: BoardRow[] }} BoardTrackGroup
+ * @typedef {{
+ *   enabled: boolean,
+ *   stationQuery: string,
+ *   stationId: string,
+ *   platform: string,
+ *   refreshIntervalSeconds: number,
+ *   mappings: Record<string, string>,
+ *   departureWindowEnabled: boolean,
+ *   departureWindowMinutes: number
+ * }} MirrorConfig
+ * @typedef {{
+ *   modulePositions?: Record<string, number>,
+ *   mode?: string,
+ *   randomIntervalSeconds?: number
+ * }} BoardConfig
+ * @typedef {{ mode?: string, randomIntervalSeconds?: number }} SaveBoardOptions
+ */
+
+/** @type {import('svelte/store').Writable<BoardModule[]>} */
+export const boardDefs = writable(/** @type {BoardModule[]} */ ([]));
+/** @type {import('svelte/store').Writable<Record<string, number>>} */
+export const boardPositions = writable(/** @type {Record<string, number>} */ ({}));
+/** @type {import('svelte/store').Writable<Array<Array<number | string>>>} */
+export const boardLayout = writable(/** @type {Array<Array<number | string>>} */ ([]));
+/** @type {import('svelte/store').Writable<boolean>} */
 export const boardLoaded = writable(false);
 
+/** @type {import('svelte/store').Writable<MirrorConfig>} */
 export const mirrorConfig = writable({
   enabled: false,
   stationQuery: '',
@@ -16,8 +55,12 @@ export const mirrorConfig = writable({
   departureWindowMinutes: 10,
 });
 
+/** @type {import('svelte/store').Readable<BoardRow[]>} */
 export const boardRows = derived(
-  [boardDefs, boardPositions],
+  /** @type {[import('svelte/store').Writable<BoardModule[]>, import('svelte/store').Writable<Record<string, number>>]} */ ([
+    boardDefs,
+    boardPositions,
+  ]),
   ([$boardDefs, $boardPositions]) => {
     return $boardDefs.map((mod) => ({
       address: mod.address,
@@ -31,13 +74,15 @@ export const boardRows = derived(
   }
 );
 
+/** @type {import('svelte/store').Readable<BoardTrackGroup[]>} */
 export const boardTrackGroups = derived(boardRows, ($boardRows) => {
+  /** @type {Record<string, BoardRow[]>} */
   const grouped = $boardRows.reduce((acc, row) => {
     const key = String(row.track ?? 'Ungrouped');
     if (!acc[key]) acc[key] = [];
     acc[key].push(row);
     return acc;
-  }, {});
+  }, /** @type {Record<string, BoardRow[]>} */ ({}));
 
   return Object.keys(grouped)
     .sort((a, b) => a.localeCompare(b))
@@ -52,6 +97,7 @@ export async function loadBoardData() {
   ]);
 
   const defs = await defsResp.json();
+  /** @type {BoardConfig} */
   const config = await configResp.json();
   const layout = await layoutResp.json();
 
@@ -63,6 +109,10 @@ export async function loadBoardData() {
   return config;
 }
 
+/**
+ * @param {Record<string, number>} positions
+ * @param {SaveBoardOptions} [options]
+ */
 export async function saveBoardPositions(positions, options = {}) {
   const payloadObj = {
     modulePositions: positions,
@@ -80,11 +130,15 @@ export async function saveBoardPositions(positions, options = {}) {
 
 export async function loadMirrorConfig() {
   const response = await fetch('/mirror-config');
+  /** @type {MirrorConfig} */
   const data = await response.json();
   mirrorConfig.set(data);
   return data;
 }
 
+/**
+ * @param {MirrorConfig} config
+ */
 export async function saveMirrorConfig(config) {
   const payload = encodeURIComponent(JSON.stringify(config));
   const response = await fetch('/mirror-config', {

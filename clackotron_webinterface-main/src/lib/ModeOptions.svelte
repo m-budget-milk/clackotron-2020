@@ -57,16 +57,16 @@
     flex-direction: row;
     width: 30%;
     line-height: 25px;
-    color: #2d327d;
+    color: #A20013;
   }
 
   .option-input {
     flex-direction: row;
     width: 70%;
     height: 25px;
-    border: 1px solid #2d327d;
+    border: 1px solid #A20013;
     border-radius: 5px;
-    color: #2d327d;
+    color: #A20013;
   }
 
   .uppercase {
