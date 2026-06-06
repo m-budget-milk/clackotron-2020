@@ -10,6 +10,7 @@ import { writable, derived } from 'svelte/store';
  *   positions?: BoardPosition[],
  *   defaultPosition?: number
  * }} BoardModule
+ * @typedef {number | string | { address?: number | string, length?: number | string }} ModuleLayoutCell
  * @typedef {BoardModule & {
  *   track: string,
  *   length: number,
@@ -38,8 +39,8 @@ import { writable, derived } from 'svelte/store';
 export const boardDefs = writable(/** @type {BoardModule[]} */ ([]));
 /** @type {import('svelte/store').Writable<Record<string, number>>} */
 export const boardPositions = writable(/** @type {Record<string, number>} */ ({}));
-/** @type {import('svelte/store').Writable<Array<Array<number | string>>>} */
-export const boardLayout = writable(/** @type {Array<Array<number | string>>} */ ([]));
+/** @type {import('svelte/store').Writable<Array<Array<ModuleLayoutCell>>>} */
+export const boardLayout = writable(/** @type {Array<Array<ModuleLayoutCell>>} */ ([]));
 /** @type {import('svelte/store').Writable<boolean>} */
 export const boardLoaded = writable(false);
 
@@ -55,18 +56,49 @@ export const mirrorConfig = writable({
   departureWindowMinutes: 10,
 });
 
+function getLayoutCellAddress(cell) {
+  if (cell && typeof cell === 'object') return cell.address;
+  return cell;
+}
+
+function getLayoutCellLength(cell) {
+  if (cell && typeof cell === 'object') return cell.length;
+  return undefined;
+}
+
+function buildLayoutLengthMap(layout) {
+  /** @type {Record<string, number>} */
+  const lengths = {};
+
+  for (const row of layout || []) {
+    for (const cell of row || []) {
+      const address = getLayoutCellAddress(cell);
+      const token = String(address ?? '').trim();
+      if (!token || token.toUpperCase() === 'X') continue;
+
+      const length = Math.max(1, Number(getLayoutCellLength(cell) ?? 1) || 1);
+      lengths[token] = length;
+    }
+  }
+
+  return lengths;
+}
+
 /** @type {import('svelte/store').Readable<BoardRow[]>} */
 export const boardRows = derived(
-  /** @type {[import('svelte/store').Writable<BoardModule[]>, import('svelte/store').Writable<Record<string, number>>]} */ ([
+  /** @type {[import('svelte/store').Writable<BoardModule[]>, import('svelte/store').Writable<Record<string, number>>, import('svelte/store').Writable<Array<Array<ModuleLayoutCell>>>]} */ ([
     boardDefs,
     boardPositions,
+    boardLayout,
   ]),
-  ([$boardDefs, $boardPositions]) => {
+  ([$boardDefs, $boardPositions, $boardLayout]) => {
+    const layoutLengths = buildLayoutLengthMap($boardLayout);
+
     return $boardDefs.map((mod) => ({
       address: mod.address,
       track: mod.track ?? 'Ungrouped',
       label: mod.label,
-      length: Math.max(1, Number(mod.length ?? 1) || 1),
+      length: Math.max(1, Number(layoutLengths[String(mod.address)] ?? mod.length ?? 1) || 1),
       positions: mod.positions,
       defaultPosition: mod.defaultPosition ?? 0,
       selectedPosition: $boardPositions[String(mod.address)] ?? mod.defaultPosition ?? 0,
@@ -121,6 +153,32 @@ export async function saveBoardPositions(positions, options = {}) {
   };
   const payload = encodeURIComponent(JSON.stringify(payloadObj));
   const response = await fetch('/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `payload=${payload}`,
+  });
+  return response.json();
+}
+
+/**
+ * @param {Array<Array<ModuleLayoutCell>>} layout
+ */
+export async function saveModuleLayout(layout) {
+  const payload = encodeURIComponent(JSON.stringify({ modules: layout }));
+  const response = await fetch('/modules-layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `payload=${payload}`,
+  });
+  return response.json();
+}
+
+/**
+ * @param {BoardModule[]} modules
+ */
+export async function saveBoardModules(modules) {
+  const payload = encodeURIComponent(JSON.stringify({ modules }));
+  const response = await fetch('/board-modules', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `payload=${payload}`,

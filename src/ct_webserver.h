@@ -34,6 +34,9 @@ class CTWebserver {
         void createStaticRoutes();
         void createConfigGetRoute();
         void createConfigSetRoute();
+        void createModuleLayoutSetRoute();
+        void createBoardModulesSetRoute();
+        void createRestartRoute();
         void createZeroRoute();
         void createStepRoute();
         void createTypeRoute();

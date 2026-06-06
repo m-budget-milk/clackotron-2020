@@ -4,7 +4,6 @@
       "address": 7,
       "track": "1",
       "label": "Departure Hour",
-      "length": 1,
       "defaultPosition": 24,
       "positions": [
         {"label": "0."},
@@ -37,7 +36,6 @@
       "address": 8,
       "track": "1",
       "label": "Departure Minute",
-      "length": 1,
       "defaultPosition": 29,
       "positions": [
         {"label": "31"},
@@ -107,7 +105,6 @@
       "address": 10,
       "track": "1",
       "label": "Service Type",
-      "length": 2,
       "defaultPosition": 24,
       "positions": [
         {"label": ""},
@@ -140,7 +137,6 @@
       "address": 11,
       "track": "1",
       "label": "Destination",
-      "length": 3,
       "defaultPosition": 35,
       "positions": [
         {"label": ""},

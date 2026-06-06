@@ -1,6 +1,12 @@
 {
   "modules": [
-    [7, 8],
-    [10, 11]
+    [
+      { "address": 7, "length": 1 },
+      { "address": 8, "length": 1 }
+    ],
+    [
+      { "address": 10, "length": 2 },
+      { "address": 11, "length": 3 }
+    ]
   ]
 }

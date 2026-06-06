@@ -57,6 +57,12 @@ void CTPreferences::setFirstBoot(bool firstBoot) {
 }
 
 void CTPreferences::loadModuleAddresses(uint8_t *moduleAddresses) {
+    if (moduleAddresses == nullptr) return;
+
+    for (uint8_t i = 0; i < MAX_CONNECTED_MODULES; i++) {
+        moduleAddresses[i] = 0x00;
+    }
+
     File file = LittleFS.open(MODULE_CONFIG_FILE_PATH, "r");
 
     if (!file) {
@@ -65,11 +71,12 @@ void CTPreferences::loadModuleAddresses(uint8_t *moduleAddresses) {
     }
 
     size_t size = file.size();
-    std::unique_ptr<char[]> buf(new char[size]);
+    std::unique_ptr<char[]> buf(new char[size + 1]);
 
     file.readBytes(buf.get(), size);
+    buf[size] = '\0';
 
-    DynamicJsonDocument doc(1024);
+    DynamicJsonDocument doc(size * 2 + 1024);
     DeserializationError error = deserializeJson(doc, buf.get());
 
     if (error) {
@@ -89,6 +96,32 @@ void CTPreferences::loadModuleAddresses(uint8_t *moduleAddresses) {
 
             if (row[j].is<int>()) {
                 intValue = row[j].as<int>();
+            } else if (row[j].is<JsonObject>()) {
+                JsonObject cell = row[j].as<JsonObject>();
+                if (cell["address"].is<int>()) {
+                    intValue = cell["address"].as<int>();
+                } else if (cell["address"].is<const char*>()) {
+                    String token = String(cell["address"].as<const char*>());
+                    token.trim();
+
+                    if (token.equalsIgnoreCase("X")) {
+                        dbg += " X";
+                        continue;
+                    }
+
+                    bool isNumber = token.length() > 0;
+                    for (size_t k = 0; k < token.length(); k++) {
+                        char c = token.charAt(k);
+                        if (c < '0' || c > '9') {
+                            isNumber = false;
+                            break;
+                        }
+                    }
+
+                    if (isNumber) {
+                        intValue = token.toInt();
+                    }
+                }
             } else if (row[j].is<const char*>()) {
                 String token = String(row[j].as<const char*>());
                 token.trim();

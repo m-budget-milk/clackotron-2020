@@ -52,6 +52,9 @@ void CTWebserver::setup(CTPreferences* preferences, CTModule* module, uint8_t* m
     this->createStaticRoutes();
     this->createConfigGetRoute();
     this->createConfigSetRoute();
+    this->createModuleLayoutSetRoute();
+    this->createBoardModulesSetRoute();
+    this->createRestartRoute();
     this->createZeroRoute();
     this->createStepRoute();
     this->createTypeRoute();
@@ -153,6 +156,266 @@ void CTWebserver::createConfigSetRoute() {
 
         this->server->sendHeader("Connection", "close");
         this->server->send(200, "application/json", "{\"success\": true}");
+    });
+}
+
+void CTWebserver::createModuleLayoutSetRoute() {
+    this->server->on("/modules-layout", HTTP_POST, [this]() {
+        if (!this->server->hasArg("payload")) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(400, "application/json", "{\"success\":false,\"error\":\"missing payload\"}");
+            return;
+        }
+
+        String payload = WebServer::urlDecode(this->server->arg("payload"));
+
+        DynamicJsonDocument doc(payload.length() * 2 + 1024);
+        DeserializationError err = deserializeJson(doc, payload);
+        if (err || !doc.containsKey("modules") || !doc["modules"].is<JsonArray>()) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(400, "application/json", "{\"success\":false,\"error\":\"invalid payload\"}");
+            return;
+        }
+
+        JsonArray rows = doc["modules"].as<JsonArray>();
+        if (rows.size() == 0) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(400, "application/json", "{\"success\":false,\"error\":\"modules must contain at least one row\"}");
+            return;
+        }
+
+        int moduleCount = 0;
+        for (JsonVariant rowValue : rows) {
+            if (!rowValue.is<JsonArray>()) {
+                this->server->sendHeader("Connection", "close");
+                this->server->send(400, "application/json", "{\"success\":false,\"error\":\"each module row must be an array\"}");
+                return;
+            }
+
+            JsonArray row = rowValue.as<JsonArray>();
+            if (row.size() == 0) {
+                this->server->sendHeader("Connection", "close");
+                this->server->send(400, "application/json", "{\"success\":false,\"error\":\"module rows cannot be empty\"}");
+                return;
+            }
+
+            for (JsonVariant cell : row) {
+                if (cell.is<const char*>()) {
+                    String token = cell.as<String>();
+                    token.trim();
+                    if (token.equalsIgnoreCase("X")) continue;
+
+                    bool isNumber = token.length() > 0;
+                    for (size_t i = 0; i < token.length(); i++) {
+                        char c = token.charAt(i);
+                        if (c < '0' || c > '9') {
+                            isNumber = false;
+                            break;
+                        }
+                    }
+
+                    if (!isNumber) {
+                        this->server->sendHeader("Connection", "close");
+                        this->server->send(400, "application/json", "{\"success\":false,\"error\":\"cells must be addresses or X placeholders\"}");
+                        return;
+                    }
+
+                    int addr = token.toInt();
+                    if (addr < 1 || addr > 255) {
+                        this->server->sendHeader("Connection", "close");
+                        this->server->send(400, "application/json", "{\"success\":false,\"error\":\"address out of range\"}");
+                        return;
+                    }
+                } else if (cell.is<int>()) {
+                    int addr = cell.as<int>();
+                    if (addr < 1 || addr > 255) {
+                        this->server->sendHeader("Connection", "close");
+                        this->server->send(400, "application/json", "{\"success\":false,\"error\":\"address out of range\"}");
+                        return;
+                    }
+                } else if (cell.is<JsonObject>()) {
+                    JsonObject obj = cell.as<JsonObject>();
+                    if (!obj.containsKey("address")) {
+                        this->server->sendHeader("Connection", "close");
+                        this->server->send(400, "application/json", "{\"success\":false,\"error\":\"module object missing address\"}");
+                        return;
+                    }
+
+                    int addr = -1;
+                    if (obj["address"].is<int>()) {
+                        addr = obj["address"].as<int>();
+                    } else if (obj["address"].is<const char*>()) {
+                        String token = obj["address"].as<String>();
+                        token.trim();
+                        if (token.equalsIgnoreCase("X")) continue;
+
+                        bool isNumber = token.length() > 0;
+                        for (size_t i = 0; i < token.length(); i++) {
+                            char c = token.charAt(i);
+                            if (c < '0' || c > '9') {
+                                isNumber = false;
+                                break;
+                            }
+                        }
+
+                        if (isNumber) addr = token.toInt();
+                    }
+
+                    if (addr < 1 || addr > 255) {
+                        this->server->sendHeader("Connection", "close");
+                        this->server->send(400, "application/json", "{\"success\":false,\"error\":\"address out of range\"}");
+                        return;
+                    }
+
+                    int length = obj["length"] | 1;
+                    if (length < 1 || length > 16) {
+                        this->server->sendHeader("Connection", "close");
+                        this->server->send(400, "application/json", "{\"success\":false,\"error\":\"length out of range\"}");
+                        return;
+                    }
+                } else {
+                    this->server->sendHeader("Connection", "close");
+                    this->server->send(400, "application/json", "{\"success\":false,\"error\":\"cells must be addresses, module objects, or X placeholders\"}");
+                    return;
+                }
+
+                moduleCount++;
+                if (moduleCount > MAX_CONNECTED_MODULES) {
+                    this->server->sendHeader("Connection", "close");
+                    this->server->send(400, "application/json", "{\"success\":false,\"error\":\"too many modules\"}");
+                    return;
+                }
+            }
+        }
+
+        File file = LittleFS.open(MODULE_CONFIG_FILE_PATH, "w");
+        if (!file) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(500, "application/json", "{\"success\":false,\"error\":\"failed to open modules.json\"}");
+            return;
+        }
+
+        serializeJsonPretty(doc, file);
+        file.close();
+
+        if (this->needsToLoadConfig != nullptr) {
+            *this->needsToLoadConfig = true;
+        }
+
+        CTLog::info("webserver: modules layout updated");
+        this->server->sendHeader("Connection", "close");
+        this->server->send(200, "application/json", "{\"success\":true}");
+    });
+}
+
+void CTWebserver::createBoardModulesSetRoute() {
+    this->server->on("/board-modules", HTTP_POST, [this]() {
+        if (!this->server->hasArg("payload")) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(400, "application/json", "{\"success\":false,\"error\":\"missing payload\"}");
+            return;
+        }
+
+        if (this->preferences == nullptr) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(500, "application/json", "{\"success\":false,\"error\":\"preferences not set\"}");
+            return;
+        }
+
+        String payload = WebServer::urlDecode(this->server->arg("payload"));
+
+        DynamicJsonDocument doc(payload.length() * 2 + 4096);
+        DeserializationError err = deserializeJson(doc, payload);
+        if (err || !doc.containsKey("modules") || !doc["modules"].is<JsonArray>()) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(400, "application/json", "{\"success\":false,\"error\":\"invalid payload\"}");
+            return;
+        }
+
+        JsonArray modules = doc["modules"].as<JsonArray>();
+        if (modules.size() == 0 || modules.size() > MAX_CONNECTED_MODULES) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(400, "application/json", "{\"success\":false,\"error\":\"invalid module count\"}");
+            return;
+        }
+
+        for (JsonVariant moduleValue : modules) {
+            if (!moduleValue.is<JsonObject>()) {
+                this->server->sendHeader("Connection", "close");
+                this->server->send(400, "application/json", "{\"success\":false,\"error\":\"module entries must be objects\"}");
+                return;
+            }
+
+            JsonObject mod = moduleValue.as<JsonObject>();
+            int addr = mod["address"] | 0;
+            if (addr < 1 || addr > 255) {
+                this->server->sendHeader("Connection", "close");
+                this->server->send(400, "application/json", "{\"success\":false,\"error\":\"address out of range\"}");
+                return;
+            }
+
+            if (!mod["positions"].is<JsonArray>()) {
+                this->server->sendHeader("Connection", "close");
+                this->server->send(400, "application/json", "{\"success\":false,\"error\":\"positions missing\"}");
+                return;
+            }
+
+            JsonArray positions = mod["positions"].as<JsonArray>();
+            if (positions.size() == 0 || positions.size() > 255) {
+                this->server->sendHeader("Connection", "close");
+                this->server->send(400, "application/json", "{\"success\":false,\"error\":\"invalid position count\"}");
+                return;
+            }
+
+            int defaultPosition = mod["defaultPosition"] | 0;
+            if (defaultPosition < 0 || defaultPosition >= (int)positions.size()) {
+                this->server->sendHeader("Connection", "close");
+                this->server->send(400, "application/json", "{\"success\":false,\"error\":\"defaultPosition out of range\"}");
+                return;
+            }
+
+            for (JsonVariant posValue : positions) {
+                if (!posValue.is<JsonObject>() || !posValue.as<JsonObject>().containsKey("label")) {
+                    this->server->sendHeader("Connection", "close");
+                    this->server->send(400, "application/json", "{\"success\":false,\"error\":\"position labels missing\"}");
+                    return;
+                }
+            }
+        }
+
+        File file = LittleFS.open(BOARD_MODULES_CONFIG_FILE_PATH, "w");
+        if (!file) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(500, "application/json", "{\"success\":false,\"error\":\"failed to open board_modules.json\"}");
+            return;
+        }
+
+        serializeJsonPretty(doc, file);
+        file.close();
+
+        if (!this->preferences->loadBoardModules()) {
+            this->server->sendHeader("Connection", "close");
+            this->server->send(500, "application/json", "{\"success\":false,\"error\":\"failed to reload board modules\"}");
+            return;
+        }
+
+        if (this->needsToLoadConfig != nullptr) {
+            *this->needsToLoadConfig = true;
+        }
+
+        CTLog::info("webserver: board modules updated from CSV import");
+        this->server->sendHeader("Connection", "close");
+        this->server->send(200, "application/json", "{\"success\":true}");
+    });
+}
+
+void CTWebserver::createRestartRoute() {
+    this->server->on("/restart", HTTP_POST, [this]() {
+        CTLog::info("webserver: restarting device from debug menu");
+        this->server->sendHeader("Connection", "close");
+        this->server->send(200, "application/json", "{\"success\":true}");
+        delay(250);
+        ESP.restart();
     });
 }
 
@@ -463,4 +726,3 @@ void CTWebserver::createStationSearchRoute() {
         this->server->send(200, "application/json", output);
     });
 }
-

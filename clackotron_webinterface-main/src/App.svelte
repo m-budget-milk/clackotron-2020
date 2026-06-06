@@ -7,6 +7,8 @@
     boardLoaded,
     loadBoardData,
     saveBoardPositions,
+    saveModuleLayout,
+    saveBoardModules,
     mirrorConfig,
     loadMirrorConfig,
     saveMirrorConfig,
@@ -27,6 +29,10 @@
   let newAddrChange = "";
   let addrResult = null;
   let saveStatus = null;
+  let moduleLayoutEditor = [];
+  let moduleLayoutStatus = null;
+  let boardModulesCsvStatus = null;
+  let restartStatus = null;
   let selectedPositions = {};
   let boardMode = "manual";
   let randomIntervalSeconds = 60;
@@ -43,12 +49,27 @@
   }
 
   $: boardRowsByAddress = new Map($boardRows.map((r) => [String(r.address), r]));
+  $: knownModuleAddresses = $boardRows
+    .map((r) => Number(r.address))
+    .filter((addr) => Number.isInteger(addr) && addr >= 1 && addr <= 255)
+    .sort((a, b) => a - b);
+
+  const getLayoutCellAddress = (cell) => {
+    if (cell && typeof cell === "object") return cell.address;
+    return cell;
+  };
+
+  const getLayoutCellLength = (cell) => {
+    if (cell && typeof cell === "object") return cell.length;
+    return undefined;
+  };
+
   $: boardVisualization = ($boardLayout || []).map((row) => {
     const cells = [];
     let pendingFillers = 0;
 
     for (const raw of row) {
-      const token = String(raw);
+      const token = String(getLayoutCellAddress(raw) ?? "");
       const isFiller = token.toUpperCase() === "X";
 
       if (pendingFillers > 0 && isFiller) {
@@ -102,6 +123,275 @@
       saveStatus = result.success ? "ok" : "error";
     } catch (e) {
       saveStatus = "error";
+    }
+  };
+
+  const syncModuleLayoutEditor = () => {
+    moduleLayoutEditor = ($boardLayout || []).map((row) =>
+      row.map((cell) => {
+        const address = String(getLayoutCellAddress(cell) ?? "");
+        const fallbackLength = boardRowsByAddress.get(address)?.length ?? 1;
+        return {
+          address,
+          length: Math.max(1, Number(getLayoutCellLength(cell) ?? fallbackLength) || 1),
+        };
+      })
+    );
+  };
+
+  const setModuleLayoutCellAddress = (rowIndex, cellIndex, value) => {
+    moduleLayoutEditor = moduleLayoutEditor.map((row, r) =>
+      r === rowIndex ? row.map((cell, c) => (c === cellIndex ? { ...cell, address: value } : cell)) : row
+    );
+  };
+
+  const setModuleLayoutCellLength = (rowIndex, cellIndex, value) => {
+    const length = Math.max(1, Number.parseInt(value, 10) || 1);
+    moduleLayoutEditor = moduleLayoutEditor.map((row, r) =>
+      r === rowIndex ? row.map((cell, c) => (c === cellIndex ? { ...cell, length } : cell)) : row
+    );
+  };
+
+  const addModuleLayoutRow = () => {
+    moduleLayoutEditor = [...moduleLayoutEditor, [{ address: "", length: 1 }]];
+  };
+
+  const removeModuleLayoutRow = (rowIndex) => {
+    moduleLayoutEditor = moduleLayoutEditor.filter((_, r) => r !== rowIndex);
+  };
+
+  const addModuleLayoutCell = (rowIndex) => {
+    moduleLayoutEditor = moduleLayoutEditor.map((row, r) =>
+      r === rowIndex ? [...row, { address: "", length: 1 }] : row
+    );
+  };
+
+  const removeModuleLayoutCell = (rowIndex, cellIndex) => {
+    moduleLayoutEditor = moduleLayoutEditor
+      .map((row, r) => (r === rowIndex ? row.filter((_, c) => c !== cellIndex) : row))
+      .filter((row) => row.length > 0);
+  };
+
+  const normalizeModuleLayout = () => {
+    return moduleLayoutEditor
+      .map((row) =>
+        row
+          .map((cell) => ({
+            address: String(cell.address ?? "").trim(),
+            length: Math.max(1, Number.parseInt(cell.length, 10) || 1),
+          }))
+          .filter((cell) => cell.address.length > 0)
+          .map((cell) =>
+            cell.address.toUpperCase() === "X"
+              ? "X"
+              : { address: Number.parseInt(cell.address, 10), length: cell.length }
+          )
+      )
+      .filter((row) => row.length > 0);
+  };
+
+  const saveModulesJson = async () => {
+    const layout = normalizeModuleLayout();
+    const validAddresses = new Set(knownModuleAddresses);
+
+    if (layout.length === 0) {
+      alert("Please add at least one module address.");
+      return;
+    }
+
+    for (const row of layout) {
+      for (const cell of row) {
+        if (cell === "X") continue;
+        const address = Number(cell.address);
+        const length = Number(cell.length);
+        if (!Number.isInteger(address) || address < 1 || address > 255) {
+          alert("Module cells must be addresses from 1-255 or X placeholders.");
+          return;
+        }
+        if (!Number.isInteger(length) || length < 1 || length > 16) {
+          alert("Module lengths must be from 1-16.");
+          return;
+        }
+        if (validAddresses.size > 0 && !validAddresses.has(address)) {
+          alert(`Address ${address} is not defined in board_modules.json.`);
+          return;
+        }
+      }
+    }
+
+    moduleLayoutStatus = null;
+    try {
+      const result = await saveModuleLayout(layout);
+      moduleLayoutStatus = result.success ? "ok" : "error";
+      if (result.success) {
+        await loadBoardData();
+        syncModuleLayoutEditor();
+      }
+    } catch (e) {
+      moduleLayoutStatus = "error";
+    }
+  };
+
+  const csvEscape = (value) => {
+    const text = String(value ?? "");
+    return /[;"\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+
+  const downloadBoardModulesCsv = () => {
+    const maxPositions = Math.max(1, ...$boardRows.map((row) => (row.positions || []).length));
+    const positionHeaders = Array.from({ length: maxPositions }, (_, i) => `pos${i}`);
+    const header = ["address", "track", "label", "defaultPosition", ...positionHeaders];
+    const rows = $boardRows.map((row) => [
+      row.address,
+      row.track,
+      row.label ?? "",
+      row.defaultPosition ?? 0,
+      ...positionHeaders.map((_, i) => row.positions?.[i]?.label ?? ""),
+    ]);
+    const csv = [header, ...rows].map((row) => row.map(csvEscape).join(";")).join("\n") + "\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "board_modules.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const parseCsv = (text) => {
+    const delimiter = (text.match(/;/g) || []).length >= (text.match(/,/g) || []).length ? ";" : ",";
+    const rows = [];
+    let row = [];
+    let cell = "";
+    let quoted = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const next = text[i + 1];
+
+      if (quoted) {
+        if (char === '"' && next === '"') {
+          cell += '"';
+          i++;
+        } else if (char === '"') {
+          quoted = false;
+        } else {
+          cell += char;
+        }
+        continue;
+      }
+
+      if (char === '"') {
+        quoted = true;
+      } else if (char === delimiter) {
+        row.push(cell);
+        cell = "";
+      } else if (char === "\n") {
+        row.push(cell);
+        rows.push(row);
+        row = [];
+        cell = "";
+      } else if (char !== "\r") {
+        cell += char;
+      }
+    }
+
+    row.push(cell);
+    if (row.some((value) => value.trim().length > 0)) rows.push(row);
+    return rows;
+  };
+
+  const importBoardModulesCsv = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    boardModulesCsvStatus = null;
+    try {
+      const rows = parseCsv(await file.text()).filter((row) => row.some((cell) => cell.trim()));
+      if (rows.length < 2) {
+        alert("CSV must contain a header row and at least one module row.");
+        return;
+      }
+
+      const headers = rows[0].map((header) => header.trim().toLowerCase());
+      const indexOf = (...names) => names.map((name) => headers.indexOf(name)).find((idx) => idx >= 0) ?? -1;
+      const addressIdx = indexOf("address", "addr");
+      const trackIdx = indexOf("track");
+      const labelIdx = indexOf("label", "name");
+      const defaultIdx = indexOf("defaultposition", "default_position", "default");
+      const positionsIdx = indexOf("positions", "positionlabels", "position_labels");
+      const positionIndexes = headers
+        .map((header, index) => ({ header, index }))
+        .filter(({ header }) => /^pos(ition)?\d+$/.test(header))
+        .sort((a, b) => Number(a.header.match(/\d+/)?.[0] ?? 0) - Number(b.header.match(/\d+/)?.[0] ?? 0))
+        .map(({ index }) => index);
+
+      if (addressIdx < 0 || (positionsIdx < 0 && positionIndexes.length === 0)) {
+        alert("CSV needs an address column and pos0/pos1/... columns.");
+        return;
+      }
+
+      const modules = rows.slice(1).map((row) => {
+        const address = Number.parseInt(row[addressIdx], 10);
+        const defaultPosition = defaultIdx >= 0 ? Number.parseInt(row[defaultIdx], 10) || 0 : 0;
+        const positions =
+          positionIndexes.length > 0
+            ? positionIndexes.map((idx) => ({ label: String(row[idx] ?? "") }))
+            : String(row[positionsIdx] ?? "")
+                .split("|")
+                .map((label) => ({ label }));
+
+        return {
+          address,
+          track: trackIdx >= 0 ? String(row[trackIdx] ?? "") : "Ungrouped",
+          label: labelIdx >= 0 ? String(row[labelIdx] ?? "") : "",
+          defaultPosition,
+          positions,
+        };
+      });
+
+      for (const mod of modules) {
+        if (!Number.isInteger(mod.address) || mod.address < 1 || mod.address > 255) {
+          alert("Every CSV row needs an address from 1-255.");
+          return;
+        }
+        if (!Array.isArray(mod.positions) || mod.positions.length === 0) {
+          alert(`Module ${mod.address} needs at least one position label.`);
+          return;
+        }
+        if (mod.defaultPosition < 0 || mod.defaultPosition >= mod.positions.length) {
+          alert(`Default position for module ${mod.address} is outside its position list.`);
+          return;
+        }
+      }
+
+      const result = await saveBoardModules(modules);
+      boardModulesCsvStatus = result.success ? "ok" : "error";
+      if (result.success) {
+        await loadBoardData();
+        syncModuleLayoutEditor();
+      }
+    } catch (e) {
+      console.error("Failed to import board modules CSV:", e);
+      boardModulesCsvStatus = "error";
+    }
+  };
+
+  const restartBoard = async () => {
+    const shouldRestart = window.confirm("Restart the board now?");
+    if (!shouldRestart) return;
+
+    restartStatus = null;
+    try {
+      const response = await fetch("/restart", { method: "POST" });
+      if (!response.ok) {
+        restartStatus = "error";
+        return;
+      }
+      restartStatus = "ok";
+    } catch (e) {
+      restartStatus = "error";
     }
   };
 
@@ -311,6 +601,7 @@
   onMount(async () => {
     await loadWebinterfaceConfig();
     const boardConfig = await loadBoardData();
+    syncModuleLayoutEditor();
     boardMode = String(boardConfig?.mode || "manual").toLowerCase() === "random" ? "random" : "manual";
     randomIntervalSeconds = Number(boardConfig?.randomIntervalSeconds || 60);
     if (!Number.isFinite(randomIntervalSeconds) || randomIntervalSeconds < 1) randomIntervalSeconds = 1;
@@ -545,6 +836,94 @@
       <h2 class="section-title">Debug Functions</h2>
       <div class="block debug-block">
         <p class="debug-intro">Use these actions for diagnostics and maintenance.</p>
+
+        <div class="debug-option">
+          <h3>Setup modules.json</h3>
+          <p>Configure the physical module layout used by the board preview and module address list.</p>
+
+          <div class="module-layout-editor">
+            {#each moduleLayoutEditor as row, rowIndex}
+              <div class="module-layout-row">
+                <span class="module-layout-row-label">Row {rowIndex + 1}</span>
+                <div class="module-layout-cells">
+                  {#each row as cell, cellIndex}
+                    <div class="module-layout-cell">
+                      <input
+                        type="text"
+                        value={cell.address}
+                        placeholder="Addr or X"
+                        on:input={(e) => setModuleLayoutCellAddress(rowIndex, cellIndex, e.target.value)}
+                      />
+                      {#if String(cell.address ?? "").trim().toUpperCase() !== "X"}
+                        <input
+                          class="module-layout-length"
+                          type="number"
+                          min="1"
+                          max="16"
+                          value={cell.length}
+                          aria-label="Module length"
+                          on:input={(e) => setModuleLayoutCellLength(rowIndex, cellIndex, e.target.value)}
+                        />
+                      {/if}
+                      <button
+                        class="small-button"
+                        type="button"
+                        on:click={() => removeModuleLayoutCell(rowIndex, cellIndex)}
+                        aria-label="Remove module cell"
+                      >
+                        -
+                      </button>
+                    </div>
+                  {/each}
+                  <button class="small-button" type="button" on:click={() => addModuleLayoutCell(rowIndex)}>+</button>
+                </div>
+                <button class="small-button" type="button" on:click={() => removeModuleLayoutRow(rowIndex)}>
+                  Remove Row
+                </button>
+              </div>
+            {/each}
+          </div>
+
+          <div class="debug-controls">
+            <button type="button" on:click={addModuleLayoutRow}>Add Row</button>
+            <button type="button" on:click={saveModulesJson}>Save modules.json</button>
+          </div>
+          {#if moduleLayoutStatus === "ok"}
+            <p class="debug-result">modules.json saved. Restart the device to reload the module address list.</p>
+          {:else if moduleLayoutStatus === "error"}
+            <p class="debug-result error">Failed to save modules.json</p>
+          {/if}
+        </div>
+
+        <div class="debug-option">
+          <h3>Setup board_modules.json</h3>
+          <p>Edit module labels and flap positions with a CSV file. Position columns are named pos0, pos1, pos2, ...</p>
+          <div class="debug-controls">
+            <button type="button" on:click={downloadBoardModulesCsv}>Download CSV</button>
+            <label class="file-button">
+              Upload CSV
+              <input type="file" accept=".csv,text/csv" on:change={importBoardModulesCsv} />
+            </label>
+          </div>
+          {#if boardModulesCsvStatus === "ok"}
+            <p class="debug-result">board_modules.json saved. Restart the board after changing active modules.</p>
+          {:else if boardModulesCsvStatus === "error"}
+            <p class="debug-result error">Failed to import board_modules.csv</p>
+          {/if}
+        </div>
+
+        <div class="debug-option">
+          <h3>Restart Board</h3>
+          <p>Restarts the controller so updated configuration files are loaded from LittleFS.</p>
+          <div class="debug-controls">
+            <button type="button" class="restart-button" on:click={restartBoard}>Restart Board</button>
+          </div>
+          {#if restartStatus === "ok"}
+            <p class="debug-result">Restarting board. Reload this page after the device reconnects.</p>
+          {:else if restartStatus === "error"}
+            <p class="debug-result error">Failed to restart board</p>
+          {/if}
+        </div>
 
         <div class="debug-option">
           <h3>Zero All Modules</h3>
@@ -793,6 +1172,7 @@
   .debug-controls {
     margin-top: 10px;
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: center;
   }
@@ -813,6 +1193,78 @@
     border-radius: 5px;
     color: #A20013;
     font-weight: 600;
+  }
+
+  .debug-result.error {
+    color: #c62828;
+  }
+
+  .module-layout-editor {
+    margin-top: 12px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .module-layout-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 8px;
+    background: #ffffff;
+    border: 1px solid #dddddd;
+    border-radius: 5px;
+  }
+
+  .module-layout-row-label {
+    min-width: 54px;
+    color: #A20013;
+    font-weight: 600;
+  }
+
+  .module-layout-cells {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .module-layout-cell {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .module-layout-cell input {
+    width: 82px;
+    padding: 8px 9px;
+    border: 1px solid #bcbcbc;
+    border-radius: 5px;
+    font-size: 0.9rem;
+  }
+
+  .module-layout-cell input.module-layout-length {
+    width: 54px;
+  }
+
+  .debug-block button.small-button {
+    margin: 0;
+    padding: 7px 10px;
+    min-width: 34px;
+  }
+
+  .file-button {
+    margin: 7px 10px;
+    padding: 10px 20px;
+    border: 0;
+    border-radius: 5px;
+    background: #A20013;
+    color: #ffffff;
+    cursor: pointer;
+  }
+
+  .file-button input {
+    display: none;
   }
 
   .mirror-row {
@@ -878,6 +1330,10 @@
 
   .debug-block button.zero-button {
     background: #d97627;
+  }
+
+  .debug-block button.restart-button {
+    background: #5d6874;
   }
 
   .save-line button:hover,

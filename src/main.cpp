@@ -235,6 +235,7 @@ void loop() {
         lastLoopTime = currentLoopTime;
 
         if (needsToLoadConfig) {
+            preferences.loadModuleAddresses(moduleAddresses);
             displayMode = preferences.getDisplayMode();
             randomShuffleIntervalSeconds = preferences.getRandomShuffleIntervalSeconds();
 
